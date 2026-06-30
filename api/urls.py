@@ -12,6 +12,10 @@ urlpatterns = [
     path("users/validate-me", auth.ValidateUserView.as_view(), name="validate-me"),
     path("users/logout", auth.LogoutView.as_view(), name="user-logout"),
 
+    # === Public (no auth) ===
+    path("public/feature-flags", congregation.FeatureFlagsView.as_view(),
+         name="feature-flags"),
+
     # === Users (VIP) ===
     path("users/<str:id>/backup", users.UserBackupView.as_view(), name="user-backup"),
     path("users/<str:id>/backup/chunked",

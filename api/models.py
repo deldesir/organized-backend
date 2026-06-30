@@ -40,6 +40,7 @@ class Congregation(models.Model):
         needs_master_key = any(r in (cong_user.cong_role or []) for r in master_key_roles)
 
         return {
+            'id': self.cong_id,
             'cong_access_code': s.get('cong_access_code', ''),
             'cong_master_key': s.get('cong_master_key') if needs_master_key else None,
             'data_sync': s.get('data_sync', {'value': True}),

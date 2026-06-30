@@ -110,20 +110,24 @@ class ValidateUserView(View):
             return JsonResponse({'message': 'TOKEN_INVALID'}, status=403)
 
         cong = cong_user.congregation
+        settings = cong.get_settings_for_user(cong_user)
 
+        # validate-me returns a FLAT object (frontend ValidateMeResponseType):
+        # the auto-login reads these fields at the top level and treats a
+        # non-empty `message` as an error — so on success the message is empty.
+        # (Login, by contrast, returns the nested app_settings envelope.)
         return JsonResponse({
-            'message': 'TOKEN_VALID',
+            'message': '',
             'id': str(cong_user.id),
-            'app_settings': {
-                'user_settings': {
-                    'firstname': cong_user.firstname,
-                    'lastname': cong_user.lastname,
-                    'cong_role': cong_user.cong_role,
-                    'user_local_uid': cong_user.user_local_uid,
-                    'user_members_delegate': cong_user.user_members_delegate,
-                },
-                'cong_settings': cong.get_settings_for_user(cong_user),
-            },
+            'cong_id': cong.cong_id,
+            'cong_prefix': cong.cong_prefix,
+            'country_code': cong.country_code,
+            'cong_name': cong.cong_name,
+            'cong_number': {'value': cong.cong_number, 'updatedAt': ''},
+            'cong_role': cong_user.cong_role,
+            'cong_master_key': settings.get('cong_master_key') or '',
+            'cong_access_code': settings.get('cong_access_code') or '',
+            'mfa': False,
         })
 
 

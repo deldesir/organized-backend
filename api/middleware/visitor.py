@@ -24,6 +24,7 @@ EXEMPT_PATHS = [
     '/api/v3/pockets/signup',
     '/api/v3/congregations/countries',
     '/api/v3/congregations/search',
+    '/api/v3/public/',  # Public app config (feature flags); no auth
     '/api/v3/webhooks/',  # Webhooks use shared secret auth
 ]
 
