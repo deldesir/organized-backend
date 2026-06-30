@@ -48,6 +48,15 @@ class Command(BaseCommand):
             action="store_true",
             help="Grant the 'admin' congregation role (recommended for the first account).",
         )
+        parser.add_argument(
+            "--superuser",
+            action="store_true",
+            help=(
+                "Also grant Django is_superuser + is_staff (Django admin access). "
+                "Separate from the 'admin' congregation role. Grant-only: this never "
+                "revokes the flags, so dropping it later does not demote the account."
+            ),
+        )
 
     @transaction.atomic
     def handle(self, *args, **opts):
@@ -69,6 +78,11 @@ class Command(BaseCommand):
         )
         user.email = email
         user.set_password(password)  # keep the password in sync with config
+        if opts["superuser"]:
+            # Grant-only: enable Django admin access, but never revoke it here so
+            # a later run without the flag can't silently lock out the operator.
+            user.is_superuser = True
+            user.is_staff = True
         user.save()
 
         # 2. Congregation (keyed on name for idempotency).
@@ -112,6 +126,6 @@ class Command(BaseCommand):
                 f"congregation={'created' if cong_created else 'exists'}, "
                 f"cong_user={'created' if profile_created else 'exists'} "
                 f"(email={email}, cong='{cong.cong_name}', "
-                f"roles={cong_user.cong_role})"
+                f"roles={cong_user.cong_role}, superuser={user.is_superuser})"
             )
         )
