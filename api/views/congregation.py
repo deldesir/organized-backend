@@ -11,6 +11,19 @@ from django.views import View
 logger = logging.getLogger('organized.congregation')
 
 
+class FeatureFlagsView(View):
+    """GET /api/v3/public/feature-flags (public, no auth)
+
+    Upstream serves remote feature toggles here. The self-host build has no
+    remote flags, so return an empty set; the frontend merges this over its
+    build-time defaults. (A 404 is also handled by the frontend, but an empty
+    200 keeps the network clean.)
+    """
+
+    def get(self, request):
+        return JsonResponse({})
+
+
 class CreateCongregationView(View):
     """PUT /api/v3/congregations/
 
