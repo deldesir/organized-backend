@@ -46,6 +46,8 @@ urlpatterns = [
          congregation.MasterKeyView.as_view(), name="master-key"),
     path("congregations/admin/<str:id>/access-code",
          congregation.AccessCodeView.as_view(), name="access-code"),
+    path("congregations/admin/<str:id>/local-uid",
+         congregation.LocalUidView.as_view(), name="local-uid"),
 
     # === Webhooks (Phase 3 — shared secret auth) ===
     path("webhooks/assignment-response",
