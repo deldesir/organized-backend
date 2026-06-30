@@ -228,6 +228,35 @@ class AccessCodeView(View):
         return JsonResponse({'message': 'ACCESS_CODE_UPDATED'})
 
 
+class LocalUidView(View):
+    """POST /api/v3/congregations/admin/<id>/local-uid
+
+    Link the requesting user to the person record that represents them in the
+    congregation (sets CongUser.user_local_uid). Any authenticated member may
+    set their own — it is not admin-only — so the path <id> is informational.
+    Without this, the dashboard's person-record step 404s and handleSavePerson
+    fails trying to parse the HTML 404 as JSON.
+    """
+
+    def post(self, request, id):
+        cong_user = request.cong_user
+        if not cong_user:
+            return JsonResponse({'message': 'UNAUTHORIZED'}, status=403)
+
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'message': 'INVALID_PAYLOAD'}, status=400)
+
+        user_uid = body.get('user_uid', '') or ''
+        cong_user.user_local_uid = user_uid
+        cong_user.save(update_fields=['user_local_uid'])
+
+        return JsonResponse(
+            {'message': 'LOCAL_UID_UPDATED', 'user_local_uid': user_uid}
+        )
+
+
 class CountriesView(View):
     """GET /api/v3/congregations/countries (public, no auth)"""
 
