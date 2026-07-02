@@ -1,0 +1,579 @@
+{
+ "schedule": {
+  "weekOf": "",
+  "midweek_meeting": {
+   "chairman": {
+    "main_hall": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "aux_class_1": {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   },
+   "opening_prayer": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "tgw_talk": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "tgw_gems": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "tgw_bible_reading": {
+    "main_hall": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "aux_class_1": {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    },
+    "aux_class_2": {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   },
+   "ayf_part1": {
+    "main_hall": {
+     "student": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ],
+     "assistant": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ]
+    },
+    "aux_class_1": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    },
+    "aux_class_2": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    }
+   },
+   "ayf_part2": {
+    "main_hall": {
+     "student": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ],
+     "assistant": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ]
+    },
+    "aux_class_1": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    },
+    "aux_class_2": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    }
+   },
+   "ayf_part3": {
+    "main_hall": {
+     "student": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ],
+     "assistant": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ]
+    },
+    "aux_class_1": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    },
+    "aux_class_2": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    }
+   },
+   "ayf_part4": {
+    "main_hall": {
+     "student": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ],
+     "assistant": [
+      {
+       "type": "main",
+       "value": "",
+       "name": "",
+       "updatedAt": ""
+      }
+     ]
+    },
+    "aux_class_1": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    },
+    "aux_class_2": {
+     "student": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     },
+     "assistant": {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    }
+   },
+   "lc_part1": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "lc_part2": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "lc_part3": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "lc_cbs": {
+    "conductor": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "reader": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ]
+   },
+   "closing_prayer": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "circuit_overseer": {
+    "type": "main",
+    "value": "",
+    "name": "",
+    "updatedAt": ""
+   },
+   "aux_fsg": {
+    "value": "",
+    "updatedAt": ""
+   },
+   "week_type": [
+    {
+     "type": "main",
+     "value": 1,
+     "updatedAt": ""
+    }
+   ]
+  },
+  "weekend_meeting": {
+   "chairman": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "opening_prayer": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "public_talk_type": [
+    {
+     "type": "main",
+     "value": "localSpeaker",
+     "updatedAt": ""
+    }
+   ],
+   "speaker": {
+    "part_1": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "part_2": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "substitute": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ]
+   },
+   "wt_study": {
+    "conductor": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ],
+    "reader": [
+     {
+      "type": "main",
+      "value": "",
+      "name": "",
+      "updatedAt": ""
+     }
+    ]
+   },
+   "closing_prayer": [
+    {
+     "type": "main",
+     "value": "",
+     "name": "",
+     "updatedAt": ""
+    }
+   ],
+   "circuit_overseer": {
+    "type": "main",
+    "value": "",
+    "name": "",
+    "updatedAt": ""
+   },
+   "week_type": [
+    {
+     "type": "main",
+     "value": 1,
+     "updatedAt": ""
+    }
+   ],
+   "outgoing_talks": []
+  }
+ },
+ "source": {
+  "weekOf": "",
+  "midweek_meeting": {
+   "event_name": [
+    {
+     "type": "main",
+     "value": "",
+     "updatedAt": ""
+    }
+   ],
+   "week_date_locale": {},
+   "weekly_bible_reading": {},
+   "song_first": {},
+   "tgw_talk": {
+    "src": {},
+    "time": {
+     "default": 10,
+     "override": []
+    }
+   },
+   "tgw_gems": {
+    "title": {},
+    "time": {
+     "default": 10,
+     "override": []
+    }
+   },
+   "tgw_bible_reading": {
+    "src": {},
+    "title": {}
+   },
+   "ayf_count": {},
+   "ayf_part1": {
+    "src": {},
+    "time": {},
+    "title": {},
+    "type": {}
+   },
+   "ayf_part2": {
+    "src": {},
+    "time": {},
+    "title": {},
+    "type": {}
+   },
+   "ayf_part3": {
+    "src": {},
+    "time": {},
+    "title": {},
+    "type": {}
+   },
+   "ayf_part4": {
+    "src": {},
+    "time": {},
+    "title": {},
+    "type": {}
+   },
+   "song_middle": {},
+   "lc_count": {
+    "default": {},
+    "override": []
+   },
+   "lc_part1": {
+    "desc": {
+     "default": {},
+     "override": []
+    },
+    "time": {
+     "default": {},
+     "override": []
+    },
+    "title": {
+     "default": {},
+     "override": []
+    }
+   },
+   "lc_part2": {
+    "desc": {
+     "default": {},
+     "override": []
+    },
+    "time": {
+     "default": {},
+     "override": []
+    },
+    "title": {
+     "default": {},
+     "override": []
+    }
+   },
+   "lc_part3": {
+    "desc": [],
+    "time": [],
+    "title": []
+   },
+   "lc_cbs": {
+    "src": {},
+    "time": {
+     "default": 30,
+     "override": []
+    },
+    "title": {
+     "default": {},
+     "override": []
+    }
+   },
+   "co_talk_title": {
+    "src": "",
+    "updatedAt": ""
+   },
+   "song_conclude": {
+    "default": {},
+    "override": []
+   }
+  },
+  "weekend_meeting": {
+   "event_name": [
+    {
+     "type": "main",
+     "value": "",
+     "updatedAt": ""
+    }
+   ],
+   "song_first": [
+    {
+     "type": "main",
+     "value": "",
+     "updatedAt": ""
+    }
+   ],
+   "public_talk": [
+    {
+     "type": "main",
+     "value": "",
+     "updatedAt": ""
+    }
+   ],
+   "co_talk_title": {
+    "public": {
+     "src": "",
+     "updatedAt": ""
+    },
+    "service": {
+     "src": "",
+     "updatedAt": ""
+    }
+   },
+   "song_middle": {},
+   "w_study": {},
+   "song_conclude": {
+    "default": {},
+    "override": [
+     {
+      "type": "main",
+      "value": "",
+      "updatedAt": ""
+     }
+    ]
+   }
+  }
+ }
+}

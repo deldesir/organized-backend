@@ -934,7 +934,15 @@ class ScheduleQueryWebhook(View):
                 if n:
                     talk_numbers[src.get('weekOf', '')] = n
 
-        # week_of -> (speaker_uid, talk_type) (schedules)
+        def _first_name(entries):
+            """First non-deleted entry's display name ('' if none)."""
+            for e in (entries or []):
+                if isinstance(e, dict) and not e.get('_deleted'):
+                    if e.get('name'):
+                        return e['name']
+            return ''
+
+        # week_of -> (speaker_uid, speaker_name, talk_type) (schedules)
         speakers = {}
         for sched in _table('schedules'):
             if not isinstance(sched, dict):
@@ -943,12 +951,15 @@ class ScheduleQueryWebhook(View):
             if not isinstance(wm, dict):
                 continue
             speaker = wm.get('speaker', {})
-            uid = _first_value(
-                speaker.get('part_1') if isinstance(speaker, dict) else []
-            )
+            part_1 = speaker.get('part_1') if isinstance(speaker, dict) else []
+            uid = _first_value(part_1)
+            # AssignmentCongregation carries a display name alongside the uid;
+            # keep it as the fallback for when persons hasn't synced (or the
+            # speaker is visiting and has no person record).
+            name = _first_name(part_1)
             talk_type = _first_value(wm.get('public_talk_type'))
-            if uid or talk_type:
-                speakers[sched.get('weekOf', '')] = (uid, talk_type)
+            if uid or name or talk_type:
+                speakers[sched.get('weekOf', '')] = (uid, name, talk_type)
 
         include_past = bool(body.get('include_past'))
         # weekOf is the MONDAY of the week ('YYYY/MM/DD'), but the talk lands
@@ -963,12 +974,12 @@ class ScheduleQueryWebhook(View):
                 continue
             if not include_past and week_of < cutoff:
                 continue
-            uid, talk_type = speakers.get(week_of, ('', ''))
+            uid, name, talk_type = speakers.get(week_of, ('', '', ''))
             talks.append({
                 'week_of': week_of,
                 'talk_number': talk_numbers.get(week_of, ''),
                 'talk_type': talk_type,
-                'speaker': names.get(uid, ''),
+                'speaker': names.get(uid) or name,
                 'speaker_uid': uid,
             })
 
