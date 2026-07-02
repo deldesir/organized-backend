@@ -10,6 +10,8 @@ import uuid
 
 from django.contrib.auth import authenticate
 from django.http import JsonResponse
+from datetime import timedelta
+
 from django.utils import timezone
 from django.views import View
 
@@ -68,6 +70,11 @@ class LoginView(View):
         # Remove any existing session with same visitorid
         sessions = [s for s in sessions if s.get('visitorid') != visitor_id]
         sessions.append(session)
+        # Prune: drop sessions idle > 30 days, keep the 10 most recent —
+        # every login appends one, so without this the list grows forever.
+        cutoff = (timezone.now() - timedelta(days=30)).isoformat()
+        sessions = [x for x in sessions if x.get('last_seen', '') >= cutoff]
+        sessions = sorted(sessions, key=lambda x: x.get('last_seen', ''))[-10:]
         cong_user.sessions = sessions
         cong_user.save(update_fields=['sessions'])
 
