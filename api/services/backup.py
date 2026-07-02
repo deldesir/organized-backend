@@ -6,6 +6,7 @@ Replicates sws2apps-api/src/v3/controllers/users_controller.ts.
 
 import logging
 
+from api.services.names import name_field
 from api.services.roles import get_user_roles
 
 logger = logging.getLogger('organized.backup')
@@ -49,8 +50,8 @@ def retrieve_user_backup(cong_user, incoming_metadata):
     # Always include app_settings
     result['app_settings'] = {
         'user_settings': {
-            'firstname': cong_user.firstname,
-            'lastname': cong_user.lastname,
+            'firstname': name_field(cong_user.firstname),
+            'lastname': name_field(cong_user.lastname),
             'cong_role': cong_user.cong_role,
             'user_local_uid': cong_user.user_local_uid,
             'user_members_delegate': cong_user.user_members_delegate,
@@ -148,12 +149,17 @@ def retrieve_user_backup(cong_user, incoming_metadata):
     return result
 
 
-def save_user_backup(cong_user, cong_backup):
+def save_user_backup(cong_user, cong_backup, incoming_metadata=None):
     """Process a backup POST with conflict detection.
 
     Args:
         cong_user: CongUser instance
-        cong_backup: dict from request body {metadata, app_settings, persons, ...}
+        cong_backup: dict from request body {app_settings, persons, ...}
+        incoming_metadata: dict of {table_name: version} from the request's
+            `metadata` HTTP header. The client sends sync metadata ONLY in that
+            header — the payload body has no 'metadata' key — so without this
+            the conflict check and server version bumps never fire. Falls back
+            to the body for backward compatibility.
 
     Returns:
         (True, None) on success
@@ -163,7 +169,10 @@ def save_user_backup(cong_user, cong_backup):
 
     cong = cong_user.congregation
 
-    incoming_metadata = cong_backup.get('metadata', {})
+    if incoming_metadata is None:
+        incoming_metadata = cong_backup.get('metadata', {})
+    if not isinstance(incoming_metadata, dict):
+        incoming_metadata = {}
 
     # Build current server metadata
     current_cong_meta = {
@@ -330,13 +339,26 @@ def _save_app_settings(cong, cong_user, app_settings):
     # Update user settings
     if user_settings:
         changed = False
-        for field in ('firstname', 'lastname', 'user_local_uid'):
+        # Names are normalized to the canonical {value, updatedAt} shape on the
+        # way in, so a stale client re-uploading a nested/repr value cannot
+        # re-poison the row (the historical corruption entered exactly here).
+        for field in ('firstname', 'lastname'):
             if field in user_settings:
-                setattr(cong_user, field, user_settings[field])
+                setattr(cong_user, field, name_field(user_settings[field]))
                 changed = True
-        if 'cong_role' in user_settings:
-            cong_user.cong_role = user_settings['cong_role']
+        if 'user_local_uid' in user_settings:
+            cong_user.user_local_uid = user_settings['user_local_uid']
             changed = True
+        # Never let a backup payload strip the admin role — a stale or partial
+        # user_settings.cong_role would lock the only admin out of every
+        # admin-gated endpoint. Preserve 'admin' if the row already has it.
+        if 'cong_role' in user_settings:
+            incoming_roles = user_settings['cong_role'] or []
+            if isinstance(incoming_roles, list):
+                if 'admin' in (cong_user.cong_role or []) and 'admin' not in incoming_roles:
+                    incoming_roles = incoming_roles + ['admin']
+                cong_user.cong_role = incoming_roles
+                changed = True
         if 'user_members_delegate' in user_settings:
             cong_user.user_members_delegate = user_settings['user_members_delegate']
             changed = True

@@ -48,6 +48,22 @@ class Congregation(models.Model):
             'cong_prefix': self.cong_prefix,
             'cong_number': self.cong_number,
             'country_code': self.country_code,
+            # The frontend iterates these unguarded during onboarding /
+            # congregation-create / pocket-signup (`for (const m of
+            # cong_settings.midweek_meeting)`), so they MUST be present and
+            # array-typed or the client throws "undefined is not iterable".
+            'cong_location': s.get('cong_location', {'address': '', 'lat': None, 'lng': None}),
+            'cong_circuit': s.get('cong_circuit', [{'type': 'main', 'value': ''}]),
+            'midweek_meeting': s.get('midweek_meeting', [
+                {'type': 'main',
+                 'weekday': {'value': 3, 'updatedAt': ''},
+                 'time': {'value': '', 'updatedAt': ''}},
+            ]),
+            'weekend_meeting': s.get('weekend_meeting', [
+                {'type': 'main',
+                 'weekday': {'value': 6, 'updatedAt': ''},
+                 'time': {'value': '', 'updatedAt': ''}},
+            ]),
         }
 
 
