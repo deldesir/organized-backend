@@ -138,6 +138,206 @@ def resolve_talk_number(title, lang_id='51'):
     return best
 
 
+def resolve_speaker_uid(cong, display):
+    """person_uid for a display name; tolerates 'Last, First' / 'First Last'."""
+    from api.models import CongBackupTable
+
+    names = {}
+    try:
+        persons_bt = CongBackupTable.objects.get(
+            congregation=cong, table_name='persons')
+        for p in (persons_bt.data or []):
+            if isinstance(p, dict):
+                pd = p.get('person_data', {})
+                uid = p.get('person_uid', '')
+                dn = pd.get('person_display_name', {}).get('value', '')
+                first = pd.get('person_firstname', {}).get('value', '')
+                last = pd.get('person_lastname', {}).get('value', '')
+                if not uid:
+                    continue
+                if dn:
+                    names[_fold(dn)] = uid
+                if first or last:
+                    names[_fold(f"{last}, {first}")] = uid
+                    names[_fold(f"{first} {last}")] = uid
+    except CongBackupTable.DoesNotExist:
+        pass
+
+    key = _fold(display)
+    if key in names:
+        return names[key]
+    parts = [x.strip() for x in (display or '').split(',')]
+    if len(parts) == 2:
+        return names.get(_fold(f"{parts[1]} {parts[0]}"), '')
+    return ''
+
+
+def write_weekend_program(cong, resolved):
+    """Merge resolved weekend talks into the schedules + sources tables.
+
+    `resolved` entries carry week_of / talk_number / talk_type / speaker /
+    speaker_uid. Rows are client-complete (cloned from the frontend schema
+    defaults) and merged by weekOf; Metadata versions are bumped so the PWA
+    pulls the change on its next sync. Shared by the docx command and the
+    unified-JSON import.
+    """
+    from django.utils import timezone
+
+    from api.models import CongBackupTable, Metadata
+
+    templates = json.loads(SCHEMAS.read_text())
+    now_iso = timezone.now().isoformat()
+
+    def build_schedule(entry, talk):
+        wm = entry.setdefault('weekend_meeting', {})
+        wm.setdefault('speaker', {}).setdefault('part_1', [{}])
+        wm['speaker']['part_1'][0] = {
+            'type': 'main', 'value': talk['speaker_uid'],
+            'name': talk['speaker'], 'updatedAt': now_iso,
+        }
+        wm.setdefault('public_talk_type', [{}])
+        wm['public_talk_type'][0] = {
+            'type': 'main', 'value': talk['talk_type'], 'updatedAt': now_iso,
+        }
+
+    def build_source(entry, talk):
+        wm = entry.setdefault('weekend_meeting', {})
+        wm.setdefault('public_talk', [{}])
+        wm['public_talk'][0] = {
+            'type': 'main',
+            'value': talk['talk_number'] if talk['talk_number'] else '',
+            'updatedAt': now_iso,
+        }
+
+    for table_name, build in (('schedules', build_schedule),
+                              ('sources', build_source)):
+        bt, _ = CongBackupTable.objects.get_or_create(
+            congregation=cong, table_name=table_name, defaults={'data': []})
+        data = bt.data if isinstance(bt.data, list) else []
+        index = {e.get('weekOf'): i for i, e in enumerate(data)
+                 if isinstance(e, dict)}
+        for talk in resolved:
+            wk = talk['week_of']
+            if wk in index:
+                entry = data[index[wk]]
+            else:
+                entry = copy.deepcopy(templates[
+                    'schedule' if table_name == 'schedules' else 'source'])
+                entry['weekOf'] = wk
+                data.append(entry)
+            build(entry, talk)
+        bt.data = data
+        bt.save()
+        Metadata.objects.update_or_create(
+            congregation=cong, cong_user=None, key=table_name,
+            defaults={'value': str(int(timezone.now().timestamp() * 1000))})
+
+
+def write_midweek_program(cong, meetings):
+    """Merge midweek assignments (unified-JSON shape) into the schedules table.
+
+    `meetings` come from fsr's docx parser via the unified JSON:
+    [{week_of, parts: [{person, part_type, assignment, school}]}] with NWS
+    part-type names. Only ASSIGNMENTS are written — the app renders midweek
+    part titles from the self-hosted source-materials mirror, so schedules
+    only need who does what. Rows are merged by weekOf (a weekend import for
+    the same week shares the entry); persons resolve to uids where known,
+    with the display name kept alongside. Returns the number of assignment
+    slots written.
+    """
+    import re as _re
+
+    from django.utils import timezone
+
+    from api.models import CongBackupTable, Metadata
+
+    templates = json.loads(SCHEMAS.read_text())
+    now_iso = timezone.now().isoformat()
+
+    bt, _ = CongBackupTable.objects.get_or_create(
+        congregation=cong, table_name='schedules', defaults={'data': []})
+    data = bt.data if isinstance(bt.data, list) else []
+    index = {e.get('weekOf'): i for i, e in enumerate(data)
+             if isinstance(e, dict)}
+
+    written = 0
+    for meeting in meetings:
+        wk = meeting.get('week_of', '')
+        if not wk:
+            continue
+        if wk in index:
+            entry = data[index[wk]]
+        else:
+            entry = copy.deepcopy(templates['schedule'])
+            entry['weekOf'] = wk
+            data.append(entry)
+            index[wk] = len(data) - 1
+
+        # Entries cloned from the template are complete; older rows may not
+        # be — repair any missing midweek branch from the template.
+        template_mw = copy.deepcopy(templates['schedule']['midweek_meeting'])
+        mw = entry.setdefault('midweek_meeting', {})
+        for key, value in template_mw.items():
+            mw.setdefault(key, value)
+
+        def slot(person):
+            return {'type': 'main',
+                    'value': resolve_speaker_uid(cong, person),
+                    'name': person, 'updatedAt': now_iso}
+
+        for part in (meeting.get('parts') or []):
+            pt = part.get('part_type', '')
+            person = part.get('person', '')
+            school = part.get('school', 1)
+            if not person:
+                continue
+
+            if pt == 'Chairman':
+                mw['chairman']['main_hall'][0] = slot(person)
+            elif pt == 'AuxiliaryClassroomCounselor':
+                mw['chairman']['aux_class_1'] = slot(person)
+            elif pt == 'OpeningPrayer':
+                mw['opening_prayer'][0] = slot(person)
+            elif pt == 'ClosingPrayer':
+                mw['closing_prayer'][0] = slot(person)
+            elif pt == 'TreasuresTalk':
+                mw['tgw_talk'][0] = slot(person)
+            elif pt == 'SpiritualGems':
+                mw['tgw_gems'][0] = slot(person)
+            elif pt == 'BibleReading':
+                if school == 1:
+                    mw['tgw_bible_reading']['main_hall'][0] = slot(person)
+                else:
+                    mw['tgw_bible_reading']['aux_class_1'] = slot(person)
+            elif pt == 'CBS':
+                mw['lc_cbs']['conductor'][0] = slot(person)
+            elif pt == 'CBSReader':
+                mw['lc_cbs']['reader'][0] = slot(person)
+            else:
+                m = _re.match(r'Apply(\d+)(Assistant)?$', pt)
+                if m and 1 <= int(m.group(1)) <= 4:
+                    role = 'assistant' if m.group(2) else 'student'
+                    part_key = f"ayf_part{m.group(1)}"
+                    if school == 1:
+                        mw[part_key]['main_hall'][role][0] = slot(person)
+                    else:
+                        mw[part_key]['aux_class_1'][role] = slot(person)
+                else:
+                    m = _re.match(r'Living(\d+)$', pt)
+                    if m and 1 <= int(m.group(1)) <= 3 and school == 1:
+                        mw[f"lc_part{m.group(1)}"][0] = slot(person)
+                    else:
+                        continue  # unknown/unmappable part — skip
+            written += 1
+
+    bt.data = data
+    bt.save()
+    Metadata.objects.update_or_create(
+        congregation=cong, cong_user=None, key='schedules',
+        defaults={'value': str(int(timezone.now().timestamp() * 1000))})
+    return written
+
+
 class Command(BaseCommand):
     help = "Import the weekend public-talk program from an Hourglass docx"
 
@@ -149,7 +349,7 @@ class Command(BaseCommand):
                             help='jwlinker MEPS language id for title matching (default 51 = Creole)')
 
     def handle(self, *args, **opts):
-        from api.models import CongBackupTable, Congregation, Metadata
+        from api.models import Congregation
 
         path = Path(opts['docx'])
         if not path.exists():
@@ -166,35 +366,7 @@ class Command(BaseCommand):
                 "'all programs' export?"
             )
 
-        # person display name -> uid, tolerant of 'Last, First' vs 'First Last'
-        names = {}
-        try:
-            persons_bt = CongBackupTable.objects.get(
-                congregation=cong, table_name='persons')
-            for p in (persons_bt.data or []):
-                if isinstance(p, dict):
-                    dn = (p.get('person_data', {})
-                          .get('person_display_name', {}).get('value', ''))
-                    uid = p.get('person_uid', '')
-                    if dn and uid:
-                        names[_fold(dn)] = uid
-                        parts = [x.strip() for x in dn.split(',')]
-                        if len(parts) == 2:
-                            names[_fold(f"{parts[1]} {parts[0]}")] = uid
-        except CongBackupTable.DoesNotExist:
-            pass
-
-        def person_uid(display):
-            key = _fold(display)
-            if key in names:
-                return names[key]
-            parts = [x.strip() for x in display.split(',')]
-            if len(parts) == 2:
-                return names.get(_fold(f"{parts[1]} {parts[0]}"), '')
-            return ''
-
         own = _fold(cong.cong_name)
-        now_iso = timezone.now().isoformat()
         resolved = []
         for t in talks:
             number = resolve_talk_number(t['title'], opts['language'])
@@ -204,7 +376,7 @@ class Command(BaseCommand):
             resolved.append({
                 **t, 'talk_number': number, 'week_of': week_of,
                 'talk_type': 'localSpeaker' if local else 'visitingSpeaker',
-                'speaker_uid': person_uid(t['speaker']),
+                'speaker_uid': resolve_speaker_uid(cong, t['speaker']),
             })
             flag = '' if number else '  ⚠ title not matched in corpus'
             self.stdout.write(
@@ -218,53 +390,7 @@ class Command(BaseCommand):
                 f"Dry run: {len(resolved)} talks parsed, nothing written"))
             return
 
-        templates = json.loads(SCHEMAS.read_text())
-
-        def upsert(table_name, build):
-            bt, _ = CongBackupTable.objects.get_or_create(
-                congregation=cong, table_name=table_name, defaults={'data': []})
-            data = bt.data if isinstance(bt.data, list) else []
-            index = {e.get('weekOf'): i for i, e in enumerate(data)
-                     if isinstance(e, dict)}
-            for talk in resolved:
-                wk = talk['week_of']
-                if wk in index:
-                    entry = data[index[wk]]
-                else:
-                    entry = copy.deepcopy(templates[
-                        'schedule' if table_name == 'schedules' else 'source'])
-                    entry['weekOf'] = wk
-                    data.append(entry)
-                build(entry, talk)
-            bt.data = data
-            bt.save()
-            Metadata.objects.update_or_create(
-                congregation=cong, cong_user=None, key=table_name,
-                defaults={'value': str(int(timezone.now().timestamp() * 1000))})
-
-        def build_schedule(entry, talk):
-            wm = entry.setdefault('weekend_meeting', {})
-            wm.setdefault('speaker', {}).setdefault('part_1', [{}])
-            wm['speaker']['part_1'][0] = {
-                'type': 'main', 'value': talk['speaker_uid'],
-                'name': talk['speaker'], 'updatedAt': now_iso,
-            }
-            wm.setdefault('public_talk_type', [{}])
-            wm['public_talk_type'][0] = {
-                'type': 'main', 'value': talk['talk_type'], 'updatedAt': now_iso,
-            }
-
-        def build_source(entry, talk):
-            wm = entry.setdefault('weekend_meeting', {})
-            wm.setdefault('public_talk', [{}])
-            wm['public_talk'][0] = {
-                'type': 'main',
-                'value': talk['talk_number'] if talk['talk_number'] else '',
-                'updatedAt': now_iso,
-            }
-
-        upsert('schedules', build_schedule)
-        upsert('sources', build_source)
+        write_weekend_program(cong, resolved)
 
         matched = sum(1 for t in resolved if t['talk_number'])
         self.stdout.write(self.style.SUCCESS(

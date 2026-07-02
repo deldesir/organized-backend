@@ -480,6 +480,7 @@ class Command(BaseCommand):
 
         data = None
         tables = {}
+        embedded_program = None
         if json_path:
             data = json.loads(Path(json_path).read_text(encoding='utf-8'))
             tables = {
@@ -492,8 +493,26 @@ class Command(BaseCommand):
             for name, rows in tables.items():
                 self.stdout.write(f"  {name}: {len(rows)} records")
 
+            # A unified JSON (fsr `export organized`) embeds the program the
+            # plain Hourglass export lacks — it supersedes the docx.
+            program = data.get('program')
+            if isinstance(program, dict) and (
+                    program.get('weekend') or program.get('midweek')):
+                embedded_program = program
+                self.stdout.write(
+                    f"  embedded program: "
+                    f"{len(program.get('weekend') or [])} weekend talk(s), "
+                    f"{len(program.get('midweek') or [])} midweek meeting(s) "
+                    f"(from {program.get('source_docx', '?')}) — docx not needed")
+
         if opts['dry_run']:
-            if docx_path:
+            if embedded_program:
+                for t in self._resolve_embedded(cong, embedded_program,
+                                                opts['language']):
+                    self.stdout.write(
+                        f"{t['week_of']}  No {t['talk_number'] or '?':>3}  "
+                        f"{t['title']}  — {t['speaker']}")
+            elif docx_path:
                 call_command('import_hourglass_program', str(docx_path),
                              '--dry-run', '--language', opts['language'])
             self.stdout.write(self.style.SUCCESS('Dry run: nothing written'))
@@ -508,7 +527,24 @@ class Command(BaseCommand):
                 congregation=cong, cong_user=None, key=name,
                 defaults={'value': str(int(timezone.now().timestamp() * 1000))})
 
-        if docx_path:
+        if embedded_program:
+            from api.management.commands.import_hourglass_program import (
+                write_midweek_program, write_weekend_program,
+            )
+            resolved = self._resolve_embedded(cong, embedded_program,
+                                              opts['language'])
+            write_weekend_program(cong, resolved)
+            matched = sum(1 for t in resolved if t['talk_number'])
+            self.stdout.write(
+                f"Imported {len(resolved)} weekend talks from the embedded "
+                f"program ({matched} with S-34 numbers)")
+            midweek = embedded_program.get('midweek') or []
+            if midweek:
+                slots = write_midweek_program(cong, midweek)
+                self.stdout.write(
+                    f"Imported {len(midweek)} midweek meeting(s) "
+                    f"({slots} assignment slots)")
+        elif docx_path:
             call_command('import_hourglass_program', str(docx_path),
                          '--language', opts['language'])
 
@@ -524,6 +560,33 @@ class Command(BaseCommand):
                 self.stdout.write(f"NWS CSV: {path}")
 
         self.stdout.write(self.style.SUCCESS('Import complete'))
+
+    def _resolve_embedded(self, cong, program, language):
+        """Unified-JSON program['weekend'] -> write_weekend_program entries.
+
+        fsr already resolved the outline numbers and normalized names to
+        'First Last'; re-resolve only what is missing (number 0, uids).
+        """
+        from api.management.commands.import_hourglass_program import (
+            resolve_talk_number, resolve_speaker_uid,
+        )
+
+        own = _fold(cong.cong_name)
+        resolved = []
+        for t in (program.get('weekend') or []):
+            number = t.get('outline_number') or \
+                resolve_talk_number(t.get('title', ''), language)
+            local = not t.get('speaker_cong') or \
+                _fold(t.get('speaker_cong')) == own
+            resolved.append({
+                'week_of': t.get('week_of', ''),
+                'title': t.get('title', ''),
+                'talk_number': number,
+                'talk_type': 'localSpeaker' if local else 'visitingSpeaker',
+                'speaker': t.get('speaker', ''),
+                'speaker_uid': resolve_speaker_uid(cong, t.get('speaker', '')),
+            })
+        return [t for t in resolved if t['week_of']]
 
     def _backfill_speaker_uids(self, cong, Metadata, CongBackupTable):
         """Fill schedule speaker uids the program import stored as name-only."""
