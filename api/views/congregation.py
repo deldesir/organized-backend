@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.views import View
 
 from api.services.cookies import verify_visitor_cookie
+from api.services.names import name_field
 
 logger = logging.getLogger('organized.congregation')
 
@@ -76,8 +77,8 @@ def _serialize_user(member, current_visitor=None):
         'profile': {
             'global_role': _global_role(member),
             'cong_role': member.cong_role or [],
-            'firstname': {'value': member.firstname or '', 'updatedAt': created},
-            'lastname': {'value': member.lastname or '', 'updatedAt': created},
+            'firstname': name_field(member.firstname, created),
+            'lastname': name_field(member.lastname, created),
             'user_local_uid': member.user_local_uid or '',
             'user_members_delegate': member.user_members_delegate or [],
             'pocket_invitation_code': member.pocket_invitation_code,
@@ -139,34 +140,43 @@ class CreateCongregationView(View):
         from api.models import Congregation
 
         cong_name = body.get('cong_name', '')
-        cong_number = body.get('cong_number', '')
         country_code = body.get('country_code', '')
+        firstname = body.get('firstname', '')
+        lastname = body.get('lastname', '')
 
         if not cong_name:
             return JsonResponse({'message': 'CONG_NAME_REQUIRED'}, status=400)
 
-        cong, created = Congregation.objects.get_or_create(
-            cong_number=cong_number,
-            defaults={
-                'cong_id': str(uuid.uuid4()),
-                'cong_name': cong_name,
-                'country_code': country_code,
-                'cong_settings': body.get('cong_settings', {}),
-            }
-        )
+        # If this user already owns a congregation, return it idempotently
+        # rather than 409ing an onboarding retry. The frontend does not send
+        # cong_number, so keying on it made every second congregation collide
+        # on '' — key on the creating user instead (single-tenant per account).
+        cong = cong_user.congregation
+        if cong is None:
+            cong = Congregation.objects.create(
+                cong_id=str(uuid.uuid4()),
+                cong_name=cong_name,
+                country_code=country_code,
+                cong_number=body.get('cong_number', '') or '',
+                cong_settings=body.get('cong_settings', {}),
+            )
 
-        if not created:
-            return JsonResponse({'message': 'CONG_EXISTS'}, status=409)
-
-        # Link the creating user to the congregation
+        # Link the creating user to the congregation and record their name.
         cong_user.congregation = cong
+        if firstname:
+            cong_user.firstname = name_field(firstname)
+        if lastname:
+            cong_user.lastname = name_field(lastname)
         if 'admin' not in (cong_user.cong_role or []):
             cong_user.cong_role = list(cong_user.cong_role or []) + ['admin']
         cong_user.save()
 
+        # Return the full cong_settings — the client iterates
+        # result.cong_settings.midweek_meeting / weekend_meeting immediately.
         return JsonResponse({
             'message': 'CONG_CREATED',
             'cong_id': cong.cong_id,
+            'cong_settings': cong.get_settings_for_user(cong_user),
         })
 
 
@@ -234,8 +244,8 @@ class CongUsersView(View):
             member = CongUser()
 
         member.congregation = cong
-        member.firstname = firstname
-        member.lastname = lastname
+        member.firstname = name_field(firstname)
+        member.lastname = name_field(lastname)
         member.user_local_uid = cong_person_uid
         member.cong_role = cong_role
         member.save()
@@ -307,9 +317,9 @@ class CongUserDetailView(View):
             if 'cong_person_delegates' in body:
                 member.user_members_delegate = body.get('cong_person_delegates') or []
             if 'first_name' in body:
-                member.firstname = body.get('first_name', '') or ''
+                member.firstname = name_field(body.get('first_name', ''))
             if 'last_name' in body:
-                member.lastname = body.get('last_name', '') or ''
+                member.lastname = name_field(body.get('last_name', ''))
             member.save()
 
         current_visitor = verify_visitor_cookie(request)
@@ -385,8 +395,8 @@ class PocketUserAddView(View):
         # user_lastname, user_secret_code, cong_person_uid, cong_role — and
         # expects the full CongregationUserType[] list back (not {message,id}).
         cong = cong_user.congregation
-        firstname = body.get('user_firstname', '') or ''
-        lastname = body.get('user_lastname', '') or ''
+        firstname = name_field(body.get('user_firstname', ''))
+        lastname = name_field(body.get('user_lastname', ''))
         cong_person_uid = body.get('cong_person_uid', '') or ''
         cong_role = body.get('cong_role') or ['publisher']
         secret = body.get('user_secret_code', '') or ''

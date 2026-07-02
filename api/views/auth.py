@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.views import View
 
 from api.services.cookies import sign_visitor_cookie, verify_visitor_cookie
+from api.services.names import bare_name
 
 logger = logging.getLogger('organized.auth')
 
@@ -89,10 +90,10 @@ class LoginView(View):
                     # Bare strings: the client's login handler wraps names
                     # into {value, updatedAt} itself — sending the JSONB
                     # object here double-wraps and corrupts the local DB.
-                    'firstname': (cong_user.firstname or {}).get('value', '')
-                        if isinstance(cong_user.firstname, dict) else (cong_user.firstname or ''),
-                    'lastname': (cong_user.lastname or {}).get('value', '')
-                        if isinstance(cong_user.lastname, dict) else (cong_user.lastname or ''),
+                    # bare_name deep-unwraps any historical nested/repr shape,
+                    # so login always emits a single plain string.
+                    'firstname': bare_name(cong_user.firstname),
+                    'lastname': bare_name(cong_user.lastname),
                     'cong_role': cong_user.cong_role,
                     'user_local_uid': cong_user.user_local_uid,
                     'user_members_delegate': cong_user.user_members_delegate,
@@ -101,7 +102,10 @@ class LoginView(View):
             },
         }
 
-        logger.info(f"Login: {cong_user.firstname} {cong_user.lastname} ({cong.cong_name})")
+        logger.info(
+            f"Login: {bare_name(cong_user.firstname)} "
+            f"{bare_name(cong_user.lastname)} ({cong.cong_name})"
+        )
 
         response = JsonResponse(response_data)
         response = sign_visitor_cookie(response, visitor_id)

@@ -4,13 +4,18 @@ Replicates the upstream sws2apps-api's signed cookie approach.
 The visitorid cookie authenticates all API requests after login.
 """
 
+import os
+
 from django.conf import settings
 from django.core.signing import Signer, BadSignature
 
 COOKIE_NAME = 'visitorid'
+# Mark the session cookie Secure when served over HTTPS (the default here —
+# the box fronts this app with TLS). Override to 0 only for a plain-HTTP LAN
+# deployment, where a Secure cookie would never be sent back.
 COOKIE_OPTIONS = {
     'httponly': True,
-    'secure': False,  # IIAB is HTTP-only on LAN
+    'secure': os.environ.get('ORGANIZED_COOKIE_SECURE', '1') == '1',
     'samesite': 'Lax',
     'max_age': 60 * 60 * 24 * 30,  # 30 days
     'path': '/',

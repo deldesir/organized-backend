@@ -7,6 +7,7 @@ They get minimal data: public schedules, their own reports.
 import json
 import logging
 import uuid
+from datetime import timedelta
 
 from django.http import JsonResponse
 from django.utils import timezone
@@ -14,8 +15,19 @@ from django.views import View
 
 from api.services.backup import retrieve_user_backup, save_user_backup
 from api.services.cookies import sign_visitor_cookie, verify_visitor_cookie
+from api.services.names import name_field
 
 logger = logging.getLogger('organized.pocket')
+
+
+def _incoming_metadata(request):
+    """Sync metadata from the `metadata` HTTP header ({} if absent/malformed)."""
+    raw = request.META.get('HTTP_METADATA', '{}')
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class PocketSignupView(View):
@@ -53,7 +65,13 @@ class PocketSignupView(View):
         }
 
         sessions = cong_user.sessions or []
+        sessions = [s for s in sessions if s.get('visitorid') != visitor_id]
         sessions.append(session)
+        # Prune like VIP login: drop sessions idle > 30 days, keep 10 newest —
+        # every re-signup appends one, so without this the list grows forever.
+        cutoff = (timezone.now() - timedelta(days=30)).isoformat()
+        sessions = [x for x in sessions if x.get('last_seen', '') >= cutoff]
+        sessions = sorted(sessions, key=lambda x: x.get('last_seen', ''))[-10:]
         cong_user.sessions = sessions
         cong_user.save(update_fields=['sessions'])
 
@@ -64,8 +82,8 @@ class PocketSignupView(View):
             'id': str(cong_user.id),
             'app_settings': {
                 'user_settings': {
-                    'firstname': cong_user.firstname,
-                    'lastname': cong_user.lastname,
+                    'firstname': name_field(cong_user.firstname),
+                    'lastname': name_field(cong_user.lastname),
                     'cong_role': cong_user.cong_role,
                     'user_local_uid': cong_user.user_local_uid,
                     'user_members_delegate': cong_user.user_members_delegate,
@@ -93,8 +111,8 @@ class ValidatePocketView(View):
             'id': str(cong_user.id),
             'app_settings': {
                 'user_settings': {
-                    'firstname': cong_user.firstname,
-                    'lastname': cong_user.lastname,
+                    'firstname': name_field(cong_user.firstname),
+                    'lastname': name_field(cong_user.lastname),
                     'cong_role': cong_user.cong_role,
                     'user_local_uid': cong_user.user_local_uid,
                     'user_members_delegate': cong_user.user_members_delegate,
@@ -132,7 +150,13 @@ class PocketBackupView(View):
             return JsonResponse({'message': 'INVALID_PAYLOAD'}, status=400)
 
         cong_backup = body.get('cong_backup', body)
-        success, error = save_user_backup(cong_user, cong_backup)
+        try:
+            success, error = save_user_backup(
+                cong_user, cong_backup, _incoming_metadata(request)
+            )
+        except Exception:
+            logger.exception("save_user_backup failed (pocket) for %s", cong_user.id)
+            return JsonResponse({'message': 'BACKUP_FAILED'}, status=500)
 
         if not success:
             return JsonResponse({'message': error}, status=400)

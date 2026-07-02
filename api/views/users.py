@@ -12,8 +12,23 @@ from django.views import View
 
 from api.services.backup import retrieve_user_backup, save_user_backup
 from api.services.cookies import verify_visitor_cookie
+from api.services.names import name_field
 
 logger = logging.getLogger('organized.backup')
+
+
+def _incoming_metadata(request):
+    """Parse the sync metadata the client sends in the `metadata` HTTP header.
+
+    The client puts sync metadata ONLY in this header; the payload body has no
+    'metadata' key. Returns {} on absence or malformed JSON.
+    """
+    raw = request.META.get('HTTP_METADATA', '{}')
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class UserBackupView(View):
@@ -48,7 +63,13 @@ class UserBackupView(View):
             return JsonResponse({'message': 'INVALID_PAYLOAD'}, status=400)
 
         cong_backup = body.get('cong_backup', body)
-        success, error = save_user_backup(cong_user, cong_backup)
+        try:
+            success, error = save_user_backup(
+                cong_user, cong_backup, _incoming_metadata(request)
+            )
+        except Exception:
+            logger.exception("save_user_backup failed (unchunked) for %s", cong_user.id)
+            return JsonResponse({'message': 'BACKUP_FAILED'}, status=500)
 
         if not success:
             return JsonResponse({'message': error}, status=400)
@@ -102,7 +123,19 @@ class ChunkedBackupView(View):
                 return JsonResponse({'message': 'INVALID_JSON'}, status=400)
 
             cong_backup = payload.get('cong_backup', payload)
-            success, error = save_user_backup(cong_user, cong_backup)
+            try:
+                success, error = save_user_backup(
+                    cong_user, cong_backup, _incoming_metadata(request)
+                )
+            except Exception:
+                # Return parseable JSON, never Django's HTML 500 page (which the
+                # client's response.json() chokes on with a '<!doctype' error).
+                logger.exception(
+                    "save_user_backup failed (chunked) for %s", cong_user.id
+                )
+                for i in range(total_chunks):
+                    cache.delete(f"upload_{cong_user.id}_{upload_id}_chunk_{i}")
+                return JsonResponse({'message': 'BACKUP_FAILED'}, status=500)
 
             # Clean up cache
             for i in range(total_chunks):
@@ -410,13 +443,13 @@ class UserJoinCongregationView(View):
         if not cong_name:
             return JsonResponse({'message': 'INVALID_PAYLOAD'}, status=400)
 
-        # Update the user's profile names if provided.
+        # Update the user's profile names if provided (canonical shape).
         changed = False
         if firstname:
-            cong_user.firstname = firstname
+            cong_user.firstname = name_field(firstname)
             changed = True
         if lastname:
-            cong_user.lastname = lastname
+            cong_user.lastname = name_field(lastname)
             changed = True
         if changed:
             cong_user.save(update_fields=['firstname', 'lastname'])
@@ -506,8 +539,8 @@ class MfaVerifyTokenView(View):
             'message': 'Token verified',
             'app_settings': {
                 'user_settings': {
-                    'firstname': cong_user.firstname,
-                    'lastname': cong_user.lastname,
+                    'firstname': name_field(cong_user.firstname),
+                    'lastname': name_field(cong_user.lastname),
                     'cong_role': cong_user.cong_role,
                     'user_local_uid': cong_user.user_local_uid,
                     'user_members_delegate': cong_user.user_members_delegate,
