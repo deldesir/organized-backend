@@ -185,14 +185,23 @@ def save_user_backup(cong_user, cong_backup, incoming_metadata=None):
     }
     current_metadata = {**current_cong_meta, **current_user_meta}
 
-    # Check for outdated backup (conflict detection)
+    # Conflict detection is advisory here, NOT fatal. This is a single-admin,
+    # single-primary-device deployment: rejecting the write with BACKUP_OUTDATED
+    # (HTTP 409) whenever the server's stored version outranks the client's dead-
+    # locks sync entirely — e.g. after a re-import, the client's data legitimately
+    # carries OLDER timestamps than a prior sync, so every upload would 409 and
+    # nothing could ever persist. A false 409 that blocks all saves is strictly
+    # worse than last-write-wins for one operator, so we log the divergence and
+    # accept the write; _update_metadata then advances the stored version to the
+    # client's. (If this ever becomes genuinely multi-device, reinstate the
+    # reject behind a per-congregation flag.)
     for key, value in incoming_metadata.items():
         if key in current_metadata and current_metadata[key] > value:
             logger.warning(
-                f"BACKUP_OUTDATED for {cong_user} on table '{key}': "
-                f"server={current_metadata[key]} > client={value}"
+                f"Backup version regression for {cong_user} on table '{key}': "
+                f"server={current_metadata[key]} > client={value} "
+                f"— accepting (single-tenant last-write-wins)."
             )
-            return False, 'BACKUP_OUTDATED'
 
     # Save app_settings if present
     if 'app_settings' in cong_backup:
