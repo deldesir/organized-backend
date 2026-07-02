@@ -103,14 +103,21 @@ def _get_member(cong, user_id):
 class FeatureFlagsView(View):
     """GET /api/v3/public/feature-flags (public, no auth)
 
-    Upstream serves remote feature toggles here. The self-host build has no
-    remote flags, so return an empty set; the frontend merges this over its
-    build-time defaults. (A 404 is also handled by the frontend, but an empty
-    200 keeps the network clean.)
+    Upstream serves remote feature toggles here. The self-host build reads
+    them from the ORGANIZED_FEATURE_FLAGS env var (comma-separated flag
+    names, e.g. "HOURGLASS_IMPORT"); the frontend merges the response over
+    its build-time VITE_FLAGS_* defaults, so no rebuild is needed to toggle
+    a feature.
     """
 
     def get(self, request):
-        return JsonResponse({})
+        import os
+        flags = {
+            name.strip(): True
+            for name in os.getenv('ORGANIZED_FEATURE_FLAGS', '').split(',')
+            if name.strip()
+        }
+        return JsonResponse(flags)
 
 
 class CreateCongregationView(View):
