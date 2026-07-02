@@ -185,6 +185,7 @@ class ScheduleQueryWebhook(View):
             'get_bible_studies': self._get_bible_studies,
             'get_notifications': self._get_notifications,
             'get_assignment_responses': self._get_assignment_responses,
+            'get_upcoming_talks': self._get_upcoming_talks,
         }
 
         handler = handlers.get(action)
@@ -873,6 +874,109 @@ class ScheduleQueryWebhook(View):
 
         results.sort(key=lambda x: x.get('responded_at', ''), reverse=True)
         return JsonResponse({'responses': results})
+
+    def _get_upcoming_talks(self, body):
+        """Upcoming weekend public talks, joined across three tables.
+
+        The talk NUMBER lives in sources.weekend_meeting.public_talk[].value,
+        the SPEAKER (person_uid) in schedules.weekend_meeting.speaker.part_1[]
+        .value, and the speaker's display name in persons — all keyed by weekOf.
+        This is the join the talkmaster sync needs: a future talk number plus
+        who delivers it. Optional params: include_past (bool), weeks (int cap,
+        default 8).
+
+        Returns {talks: [{week_of, talk_number, talk_type, speaker,
+        speaker_uid}]} sorted by week.
+        """
+        from datetime import date
+
+        from api.models import CongBackupTable, Congregation
+
+        cong = Congregation.objects.first()
+        if not cong:
+            return JsonResponse({'talks': []})
+
+        def _table(name):
+            try:
+                bt = CongBackupTable.objects.get(
+                    congregation=cong, table_name=name
+                )
+                return bt.data if isinstance(bt.data, list) else []
+            except CongBackupTable.DoesNotExist:
+                return []
+
+        # person_uid -> display name
+        names = {}
+        for p in _table('persons'):
+            if isinstance(p, dict):
+                pd = p.get('person_data', {})
+                names[p.get('person_uid', '')] = (
+                    pd.get('person_display_name', {}).get('value', '')
+                )
+
+        def _first_value(entries):
+            """First non-deleted {type, value} entry's value ('' if none)."""
+            for e in (entries or []):
+                if isinstance(e, dict) and not e.get('_deleted'):
+                    v = e.get('value')
+                    if v not in (None, ''):
+                        return v
+            return ''
+
+        # week_of -> talk number (sources)
+        talk_numbers = {}
+        for src in _table('sources'):
+            if not isinstance(src, dict):
+                continue
+            wm = src.get('weekend_meeting', {})
+            if isinstance(wm, dict):
+                n = _first_value(wm.get('public_talk'))
+                if n:
+                    talk_numbers[src.get('weekOf', '')] = n
+
+        # week_of -> (speaker_uid, talk_type) (schedules)
+        speakers = {}
+        for sched in _table('schedules'):
+            if not isinstance(sched, dict):
+                continue
+            wm = sched.get('weekend_meeting', {})
+            if not isinstance(wm, dict):
+                continue
+            speaker = wm.get('speaker', {})
+            uid = _first_value(
+                speaker.get('part_1') if isinstance(speaker, dict) else []
+            )
+            talk_type = _first_value(wm.get('public_talk_type'))
+            if uid or talk_type:
+                speakers[sched.get('weekOf', '')] = (uid, talk_type)
+
+        include_past = bool(body.get('include_past'))
+        # weekOf is the MONDAY of the week ('YYYY/MM/DD'), but the talk lands
+        # on the weekend — so the current week stays "upcoming" until it is
+        # fully over. Cut off at 6 days back; lexical compare fits the format.
+        from datetime import timedelta
+        cutoff = (date.today() - timedelta(days=6)).isoformat().replace('-', '/')
+
+        talks = []
+        for week_of in sorted(set(talk_numbers) | set(speakers)):
+            if not week_of:
+                continue
+            if not include_past and week_of < cutoff:
+                continue
+            uid, talk_type = speakers.get(week_of, ('', ''))
+            talks.append({
+                'week_of': week_of,
+                'talk_number': talk_numbers.get(week_of, ''),
+                'talk_type': talk_type,
+                'speaker': names.get(uid, ''),
+                'speaker_uid': uid,
+            })
+
+        try:
+            weeks_cap = int(body.get('weeks') or 8)
+        except (TypeError, ValueError):
+            weeks_cap = 8
+        return JsonResponse({'talks': talks[:max(weeks_cap, 1)]})
 
     def _get_notifications(self, body):
         """Return notifications, optionally filtered by person."""
