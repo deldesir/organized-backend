@@ -67,8 +67,11 @@ class CongUser(models.Model):
     congregation = models.ForeignKey(
         Congregation, on_delete=models.CASCADE, related_name='members'
     )
-    firstname = models.CharField(max_length=100, default='')
-    lastname = models.CharField(max_length=100, default='')
+    # {value, updatedAt} objects — the app's schema for name fields. A plain
+    # CharField here silently str()'s assigned dicts into Python-repr strings
+    # that then corrupt every sync cycle (the client wraps them again).
+    firstname = models.JSONField(default=dict)
+    lastname = models.JSONField(default=dict)
     user_local_uid = models.CharField(max_length=64, default='', blank=True)
     cong_role = ArrayField(
         models.CharField(max_length=50), default=list, blank=True

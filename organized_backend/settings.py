@@ -200,3 +200,21 @@ CELERY_BEAT_SCHEDULE = {
         'args': (1,),  # congregation PK — will be dynamic in multi-tenant
     },
 }
+
+# Log unhandled request exceptions to stderr (gunicorn error log). Without
+# this, 500s are invisible: Django's default routes them to AdminEmailHandler.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'root': {'handlers': ['console'], 'level': 'INFO'},
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}
