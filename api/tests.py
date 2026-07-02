@@ -3,6 +3,36 @@ from django.test import TestCase
 from api.services.names import bare_name, name_field
 
 
+class CountriesDataTests(TestCase):
+    """The public countries endpoint must offer worldwide coverage."""
+
+    def test_full_iso_list(self):
+        from api.services.countries import COUNTRIES
+        codes = {c for c, _ in COUNTRIES}
+        self.assertGreater(len(COUNTRIES), 150)
+        # The two previously-hardcoded ones must still be present.
+        self.assertIn("US", codes)
+        self.assertIn("HT", codes)
+        # A sampling of every-continent coverage.
+        for c in ("FR", "JP", "BR", "NG", "AU", "CA"):
+            self.assertIn(c, codes)
+
+    def test_codes_are_unique_alpha2(self):
+        from api.services.countries import COUNTRIES
+        codes = [c for c, _ in COUNTRIES]
+        self.assertEqual(len(codes), len(set(codes)))
+        self.assertTrue(all(len(c) == 2 for c in codes))
+
+
+class WebhookPhoneMatchTests(TestCase):
+    """Phone normalization for assignment-response person resolution."""
+
+    def test_digits_strips_formatting(self):
+        from api.views.webhooks import _digits
+        self.assertEqual(_digits("+509 3712-3456"), "50937123456")
+        self.assertEqual(_digits(None), "")
+
+
 class NameCanonicalizationTests(TestCase):
     """Lock in the single canonical shape for firstname/lastname.
 

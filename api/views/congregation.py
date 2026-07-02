@@ -448,9 +448,10 @@ class PocketUserDeleteView(View):
 class CongregationEraseView(View):
     """DELETE /api/v3/congregations/admin/<id>/erase
 
-    Destructive in upstream. Stub-noop here (Phase 2): acknowledge success but
-    do NOT cascade-delete the congregation. The client signs out and wipes its
-    local database on a 200 regardless.
+    Destructive: cascade-delete the caller's congregation and ALL of its data
+    (members, backup tables, metadata — every FK is on_delete=CASCADE). The
+    client already gates this behind an admin action that requires re-entering
+    the master key, then signs out and wipes its local database on the 200.
     """
 
     def delete(self, request, id):
@@ -458,34 +459,104 @@ class CongregationEraseView(View):
         if not cong_user or 'admin' not in (cong_user.cong_role or []):
             return JsonResponse({'message': 'UNAUTHORIZED'}, status=403)
 
-        # Body carries {key} (master key). Parsed leniently; verification and
-        # the actual cascade delete are deferred to Phase 2.
+        # Body carries {key} (the master key). It is client-encrypted and the
+        # server keeps encryption pass-through (see encryption policy), so the
+        # admin-role check + the client's own master-key prompt are the gate.
         try:
             json.loads(request.body)
         except Exception:
             pass
 
+        cong = cong_user.congregation
+        if cong is not None:
+            cong_name = cong.cong_name
+            cong.delete()  # cascades to members / backup_tables / metadata
+            logger.warning("Congregation erased by admin: %s", cong_name)
+
         return JsonResponse({'message': 'CONGREGATION_DELETED'})
+
+
+def _serialize_join_requests(cong):
+    """Stored join requests -> APIUserRequest[] {user, request_date, first/last}."""
+    data = cong.data if isinstance(cong.data, dict) else {}
+    out = []
+    for r in (data.get('join_requests') or []):
+        if not isinstance(r, dict):
+            continue
+        out.append({
+            'user': r.get('user_id', ''),
+            'request_date': r.get('requested_at', ''),
+            'firstname': r.get('firstname', ''),
+            'lastname': r.get('lastname', ''),
+        })
+    return out
+
+
+def _drop_join_request(cong, user_id):
+    """Remove a join request by user_id and persist."""
+    data = cong.data if isinstance(cong.data, dict) else {}
+    reqs = [
+        r for r in (data.get('join_requests') or [])
+        if isinstance(r, dict) and r.get('user_id') != user_id
+    ]
+    data['join_requests'] = reqs
+    cong.data = data
+    cong.save(update_fields=['data'])
 
 
 class JoinRequestsView(View):
     """DELETE/PATCH /api/v3/congregations/admin/<id>/join-requests
 
-    Join requests are a Phase 2 feature with no storage yet. Both handlers are
-    stub-noop and return an empty, correctly-typed APIUserRequest[] array.
+    Requests are recorded by UserJoinCongregationView in Congregation.data
+    ['join_requests']. DELETE declines (drops the request); PATCH accepts
+    (attaches the user to this congregation with the chosen role, then drops
+    the request). Both return the remaining APIUserRequest[].
     """
 
     def delete(self, request, id):
         cong_user = request.cong_user
         if not cong_user or 'admin' not in (cong_user.cong_role or []):
             return JsonResponse({'message': 'UNAUTHORIZED'}, status=403)
-        return JsonResponse([], safe=False)
+
+        cong = cong_user.congregation
+        target = request.META.get('HTTP_USER', '') or ''
+        if target:
+            _drop_join_request(cong, target)
+        return JsonResponse(_serialize_join_requests(cong), safe=False)
 
     def patch(self, request, id):
         cong_user = request.cong_user
         if not cong_user or 'admin' not in (cong_user.cong_role or []):
             return JsonResponse({'message': 'UNAUTHORIZED'}, status=403)
-        return JsonResponse([], safe=False)
+
+        from api.models import CongUser
+
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError:
+            body = {}
+
+        cong = cong_user.congregation
+        target = request.META.get('HTTP_USER', '') or ''
+        role = body.get('role') or ['publisher']
+        person_uid = body.get('person_uid', '') or ''
+
+        if target:
+            # Attach the requesting user to this congregation.
+            member = CongUser.objects.filter(id=target).first()
+            if member is not None:
+                member.congregation = cong
+                member.cong_role = role
+                if person_uid:
+                    member.user_local_uid = person_uid
+                if body.get('firstname'):
+                    member.firstname = name_field(body.get('firstname'))
+                if body.get('lastname'):
+                    member.lastname = name_field(body.get('lastname'))
+                member.save()
+            _drop_join_request(cong, target)
+
+        return JsonResponse(_serialize_join_requests(cong), safe=False)
 
 
 class CongregationApplicationView(View):
@@ -667,17 +738,15 @@ class CountriesView(View):
     """
 
     def get(self, request):
-        countries = [
-            {'code': 'US', 'name': 'United States'},
-            {'code': 'HT', 'name': 'Haiti'},
-        ]
+        from api.services.countries import COUNTRIES
+
         return JsonResponse([
             {
-                'countryCode': c['code'],
-                'countryName': c['name'],
-                'countryGuid': c['code'],
+                'countryCode': code,
+                'countryName': name,
+                'countryGuid': code,
             }
-            for c in countries
+            for code, name in COUNTRIES
         ], safe=False)
 
 

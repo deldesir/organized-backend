@@ -28,6 +28,44 @@ def _verify_webhook_secret(request):
     return actual == expected
 
 
+def _digits(s):
+    """Keep only digits — normalize a phone number for loose comparison."""
+    return ''.join(ch for ch in str(s or '') if ch.isdigit())
+
+
+def _resolve_person_by_phone(cong, phone):
+    """Best-effort (person_uid, display_name) for a phone number.
+
+    Matches on the trailing 8+ digits so country-code / formatting differences
+    between the WhatsApp URN and the stored person record don't prevent a hit.
+    Returns (None, '') when no person matches.
+    """
+    from api.models import CongBackupTable
+
+    target = _digits(phone)
+    if not target:
+        return None, ''
+    try:
+        persons_bt = CongBackupTable.objects.get(
+            congregation=cong, table_name='persons'
+        )
+    except CongBackupTable.DoesNotExist:
+        return None, ''
+
+    for person in (persons_bt.data or []):
+        if not isinstance(person, dict):
+            continue
+        pd = person.get('person_data', {})
+        stored = _digits(pd.get('phone', {}).get('value', ''))
+        if not stored:
+            continue
+        tail = min(len(stored), len(target), 8)
+        if tail >= 8 and stored[-tail:] == target[-tail:]:
+            name = pd.get('person_display_name', {}).get('value', '')
+            return person.get('person_uid'), name
+    return None, ''
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class AssignmentResponseWebhook(View):
     """POST /api/v3/webhooks/assignment-response
@@ -58,13 +96,48 @@ class AssignmentResponseWebhook(View):
         if intent not in ('accept', 'decline'):
             return JsonResponse({'message': 'INVALID_INTENT'}, status=400)
 
+        from django.utils import timezone
+
+        from api.models import CongBackupTable, Congregation
+
+        cong = Congregation.objects.first()
+        if not cong:
+            return JsonResponse({'message': 'NO_CONGREGATION'}, status=404)
+
+        # Resolve the phone to a person so the schedule editor / Hermes can tie
+        # the response to a publisher (best effort — an unknown number is still
+        # recorded so nothing is silently dropped).
+        person_uid, person_name = _resolve_person_by_phone(cong, phone)
+
+        # Append to the congregation-scoped 'assignment_responses' table,
+        # de-duplicating on (person, week, type) so a re-reply replaces.
+        bt, _ = CongBackupTable.objects.get_or_create(
+            congregation=cong, table_name='assignment_responses',
+            defaults={'data': []}
+        )
+        records = bt.data if isinstance(bt.data, list) else []
+        key = (person_uid or phone, week_of, assignment_type)
+        records = [
+            r for r in records
+            if (r.get('person_uid') or r.get('phone'),
+                r.get('week_of'), r.get('assignment_type')) != key
+        ]
+        records.append({
+            'person_uid': person_uid,
+            'person_name': person_name,
+            'phone': phone,
+            'intent': intent,
+            'week_of': week_of,
+            'assignment_type': assignment_type,
+            'responded_at': timezone.now().isoformat(),
+        })
+        bt.data = records
+        bt.save()
+
         logger.info(
-            f"Assignment response: {phone} {intent}ed "
+            f"Assignment response recorded: {person_name or phone} {intent}ed "
             f"{assignment_type} for {week_of}"
         )
-
-        # Store the response in the schedules backup table
-        # Phase 3.1 will add detailed response tracking
         return JsonResponse({'message': 'RESPONSE_RECORDED'})
 
 
@@ -111,6 +184,7 @@ class ScheduleQueryWebhook(View):
             'get_cong_analysis': self._get_cong_analysis,
             'get_bible_studies': self._get_bible_studies,
             'get_notifications': self._get_notifications,
+            'get_assignment_responses': self._get_assignment_responses,
         }
 
         handler = handlers.get(action)
@@ -757,6 +831,48 @@ class ScheduleQueryWebhook(View):
             })
 
         return JsonResponse({'studies': studies})
+
+    def _get_assignment_responses(self, body):
+        """Return WhatsApp accept/decline responses, newest first.
+
+        Optional filters: week_of, and person_name (loose match). Written by
+        AssignmentResponseWebhook; lets Hermes/the schedule editor see who has
+        confirmed or declined an assignment.
+        """
+        from api.models import CongBackupTable, Congregation
+
+        cong = Congregation.objects.first()
+        if not cong:
+            return JsonResponse({'responses': []})
+
+        try:
+            bt = CongBackupTable.objects.get(
+                congregation=cong, table_name='assignment_responses'
+            )
+        except CongBackupTable.DoesNotExist:
+            return JsonResponse({'responses': []})
+
+        week_of = body.get('week_of', '')
+        person_name = body.get('person_name', '').lower()
+
+        results = []
+        for r in (bt.data or []):
+            if not isinstance(r, dict):
+                continue
+            if week_of and r.get('week_of', '') != week_of:
+                continue
+            if person_name and person_name not in (r.get('person_name', '') or '').lower():
+                continue
+            results.append({
+                'person': r.get('person_name', '') or r.get('phone', ''),
+                'intent': r.get('intent', ''),
+                'week_of': r.get('week_of', ''),
+                'assignment_type': r.get('assignment_type', ''),
+                'responded_at': r.get('responded_at', ''),
+            })
+
+        results.sort(key=lambda x: x.get('responded_at', ''), reverse=True)
+        return JsonResponse({'responses': results})
 
     def _get_notifications(self, body):
         """Return notifications, optionally filtered by person."""
