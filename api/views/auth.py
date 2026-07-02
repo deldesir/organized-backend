@@ -79,8 +79,13 @@ class LoginView(View):
             'id': str(cong_user.id),
             'app_settings': {
                 'user_settings': {
-                    'firstname': cong_user.firstname,
-                    'lastname': cong_user.lastname,
+                    # Bare strings: the client's login handler wraps names
+                    # into {value, updatedAt} itself — sending the JSONB
+                    # object here double-wraps and corrupts the local DB.
+                    'firstname': (cong_user.firstname or {}).get('value', '')
+                        if isinstance(cong_user.firstname, dict) else (cong_user.firstname or ''),
+                    'lastname': (cong_user.lastname or {}).get('value', '')
+                        if isinstance(cong_user.lastname, dict) else (cong_user.lastname or ''),
                     'cong_role': cong_user.cong_role,
                     'user_local_uid': cong_user.user_local_uid,
                     'user_members_delegate': cong_user.user_members_delegate,

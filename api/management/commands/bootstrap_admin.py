@@ -96,17 +96,46 @@ class Command(BaseCommand):
         )
 
         # 3. admin CongUser linking the auth user to the congregation.
+        def name_field(raw):
+            """Canonical {value, updatedAt} shape from any historical shape.
+
+            Unwraps accidental double-wrapping ({'value': {'value': ...}})
+            and repr-strings ("{'value': 'X', ...}") left by earlier runs
+            that stored bare strings into the JSONB field.
+            """
+            import ast
+            seen = 0
+            while seen < 5:
+                if isinstance(raw, dict):
+                    raw = raw.get("value", "")
+                elif isinstance(raw, str) and raw.startswith("{'value'"):
+                    try:
+                        raw = ast.literal_eval(raw)
+                    except (ValueError, SyntaxError):
+                        break
+                else:
+                    break
+                seen += 1
+            return {"value": str(raw or ""), "updatedAt": ""}
+
         cong_user, profile_created = CongUser.objects.get_or_create(
             auth_user=user,
             defaults={
                 "congregation": cong,
-                "firstname": opts["firstname"],
-                "lastname": opts["lastname"],
+                "firstname": name_field(opts["firstname"]),
+                "lastname": name_field(opts["lastname"]),
                 "cong_role": ["admin"] if opts["admin"] else [],
             },
         )
 
         changed = False
+        # Self-heal name shapes on every run (idempotent).
+        for attr, cli_val in (("firstname", opts["firstname"]), ("lastname", opts["lastname"])):
+            current = getattr(cong_user, attr)
+            fixed = name_field(current if current else cli_val)
+            if current != fixed:
+                setattr(cong_user, attr, fixed)
+                changed = True
         if cong_user.congregation_id != cong.id:
             cong_user.congregation = cong
             changed = True
