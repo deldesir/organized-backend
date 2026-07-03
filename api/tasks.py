@@ -78,6 +78,16 @@ def send_assignment_notification(self, congregation_id, diff):
     # Normalize phone
     phone = normalize_phone(phone)
 
+    # Consent gate — applies to EVERY delivery path (RapidPro flow AND the
+    # WuzAPI fallback): only notify people who have messaged us first.
+    if not _has_opted_in(phone):
+        logger.info(
+            f"Notification skipped (no opt-in): {person_uid} has never "
+            f"messaged the system — inviting them to write first is the "
+            f"only way to enable notifications"
+        )
+        return
+
     action = diff.get('action', 'assigned')
     assignment_type = diff.get('assignment_type', 'Unknown')
     week_of = diff.get('week_of', '')
@@ -249,6 +259,66 @@ def _format_notification(cong_name, action, assignment_type, week_of):
             f"Your assignment has been removed: *{readable_type}*\n"
             f"Week of: {week_of}"
         )
+
+
+def _has_opted_in(phone):
+    """Consent gate: only people who have messaged us first may be notified.
+
+    Cold outbound to a number that never wrote to the system is spam (and on
+    WhatsApp, a fast way to get the sender banned). A person counts as opted
+    in only when their URN exists as a RapidPro contact AND that contact has
+    at least one INBOUND message — i.e. they contacted us first. Contacts
+    merely created via API/flow-starts have no inbound history and stay
+    gated. Fails closed: any lookup error or missing credentials means no
+    send.
+    """
+    import requests
+
+    api_token = getattr(settings, 'RAPIDPRO_API_TOKEN', '')
+    if not api_token:
+        logger.warning("Opt-in check impossible (no RAPIDPRO_API_TOKEN) — not sending")
+        return False
+
+    rapidpro_url = getattr(settings, 'RAPIDPRO_URL', 'http://127.0.0.1:8080')
+    headers = {'Authorization': f'Token {api_token}'}
+    bare = phone.lstrip('+')
+
+    try:
+        contact = None
+        for urn in (f'whatsapp:{bare}', f'tel:+{bare}'):
+            resp = requests.get(
+                f"{rapidpro_url}/api/v2/contacts.json",
+                headers=headers, params={'urn': urn}, timeout=10,
+            )
+            resp.raise_for_status()
+            results = resp.json().get('results', [])
+            if results:
+                contact = results[0]
+                break
+
+        if not contact:
+            return False
+
+        # Look for ANY inbound message from this contact. Note: combining
+        # `folder=incoming` with `contact` returns nothing on this RapidPro
+        # build, so fetch the contact's messages and check `direction`
+        # client-side (paged, newest first).
+        url = f"{rapidpro_url}/api/v2/messages.json"
+        params = {'contact': contact['uuid']}
+        for _ in range(3):  # up to 3 pages (750 msgs) is plenty at this scale
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if any(m.get('direction') == 'in' for m in data.get('results', [])):
+                return True
+            url = data.get('next')
+            params = None
+            if not url:
+                break
+        return False
+    except Exception as e:
+        logger.warning(f"Opt-in check failed for {phone}: {e} — not sending")
+        return False
 
 
 def _send_via_rapidpro(phone, flow_uuid, diff, api_token):
