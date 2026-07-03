@@ -24,6 +24,13 @@ Usage:
   manage.py import_hourglass                       # discover in /library/hourglass
   manage.py import_hourglass --dir /some/dir --dry-run
   manage.py import_hourglass export.json program.docx --nws-out /library/hourglass/nws
+
+
+RESCUE PATH ONLY: the canonical import is the Organized PWA
+(Congregation settings -> Import), which consumes fsr's unified JSON
+in the browser and writes through the normal sync path. Use this
+command only when no browser is available (headless restore,
+automation experiments); expect it to lag the PWA importer.
 """
 
 import csv

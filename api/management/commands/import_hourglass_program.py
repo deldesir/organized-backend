@@ -20,6 +20,13 @@ fields untouched.
 
 Usage:
   manage.py import_hourglass_program <file.docx> [--dry-run] [--language 51]
+
+
+RESCUE PATH ONLY: the canonical import is the Organized PWA
+(Congregation settings -> Import), which consumes fsr's unified JSON
+in the browser and writes through the normal sync path. Use this
+command only when no browser is available (headless restore,
+automation experiments); expect it to lag the PWA importer.
 """
 
 import copy
