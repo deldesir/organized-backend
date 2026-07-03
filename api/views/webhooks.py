@@ -186,6 +186,7 @@ class ScheduleQueryWebhook(View):
             'get_notifications': self._get_notifications,
             'get_assignment_responses': self._get_assignment_responses,
             'get_upcoming_talks': self._get_upcoming_talks,
+            'get_persons': self._get_persons,
         }
 
         handler = handlers.get(action)
@@ -333,6 +334,53 @@ class ScheduleQueryWebhook(View):
                 })
 
         return JsonResponse({'persons': results[:10]})
+
+    def _get_persons(self, body):
+        """Full congregation roster for the person-hub sync.
+
+        Returns uid, names, phone, email per person — the fields the nightly
+        person_sync job mirrors into RapidPro contacts and SiYuan person
+        pages. Empty until the operator enables Data sharing in Organized
+        (persons live client-side until then).
+        """
+        from api.models import CongBackupTable, Congregation
+
+        cong = Congregation.objects.first()
+        if not cong:
+            return JsonResponse({'persons': []})
+
+        try:
+            bt = CongBackupTable.objects.get(
+                congregation=cong, table_name='persons'
+            )
+        except CongBackupTable.DoesNotExist:
+            return JsonResponse({'persons': []})
+
+        def _val(container, key):
+            v = (container or {}).get(key) or {}
+            return v.get('value', '') if isinstance(v, dict) else (v or '')
+
+        persons = []
+        for p in (bt.data or []):
+            if not isinstance(p, dict):
+                continue
+            pd = p.get('person_data', {}) or {}
+            first = _val(p, 'person_firstname')
+            last = _val(p, 'person_lastname')
+            display = _val(pd, 'person_display_name') or f"{first} {last}".strip()
+            archived = (pd.get('archived') or {})
+            persons.append({
+                'person_uid': p.get('person_uid'),
+                'display_name': display,
+                'firstname': first,
+                'lastname': last,
+                'phone': _val(pd, 'phone'),
+                'email': _val(pd, 'email'),
+                'archived': bool(archived.get('value'))
+                if isinstance(archived, dict) else bool(archived),
+            })
+
+        return JsonResponse({'persons': persons})
 
     # ── New Actions (ADR-012 Phase 3 expansion) ──────────────────────────
 
