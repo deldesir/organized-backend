@@ -336,46 +336,125 @@ class ScheduleQueryWebhook(View):
         return JsonResponse({'persons': results[:10]})
 
     def _get_persons(self, body):
-        """Full congregation roster for the person-hub sync.
+        """Full congregation roster for the person-hub sync (enriched).
 
-        Returns uid, names, phone, email per person — the fields the nightly
-        person_sync job mirrors into RapidPro contacts and SiYuan person
-        pages. Empty until the operator enables Data sharing in Organized
-        (persons live client-side until then).
+        Returns uid, names, contact info, status dates, active privileges
+        and enrollments, field-service group, and upcoming schedule slots
+        per person — everything the nightly person_sync job needs to render
+        RapidPro contacts and SiYuan person-wiki pages. Empty until the
+        operator enables Data sharing in Organized (persons live client-side
+        until then).
         """
+        from datetime import date, timedelta
+
         from api.models import CongBackupTable, Congregation
 
         cong = Congregation.objects.first()
         if not cong:
             return JsonResponse({'persons': []})
 
-        try:
-            bt = CongBackupTable.objects.get(
-                congregation=cong, table_name='persons'
-            )
-        except CongBackupTable.DoesNotExist:
+        def _table(name):
+            try:
+                bt = CongBackupTable.objects.get(
+                    congregation=cong, table_name=name
+                )
+                return bt.data if isinstance(bt.data, list) else []
+            except CongBackupTable.DoesNotExist:
+                return []
+
+        persons_data = _table('persons')
+        if not persons_data:
             return JsonResponse({'persons': []})
 
         def _val(container, key):
             v = (container or {}).get(key) or {}
             return v.get('value', '') if isinstance(v, dict) else (v or '')
 
+        def _active(items, kind_key):
+            """Non-deleted, not-ended entries of privileges/enrollments."""
+            out = []
+            for it in items or []:
+                if not isinstance(it, dict) or it.get('_deleted'):
+                    continue
+                if it.get('end_date'):
+                    continue
+                out.append({
+                    'kind': it.get(kind_key, ''),
+                    'start_date': it.get('start_date') or '',
+                })
+            return out
+
+        # uid -> {'label': group name/number, 'role': overseer|assistant|''}
+        groups = {}
+        for idx, g in enumerate(_table('field_service_groups')):
+            if not isinstance(g, dict):
+                continue
+            gd = g.get('group_data', {}) or {}
+            label = (gd.get('name') or '').strip() or f"Gwoup {idx + 1}"
+            for m in gd.get('members') or []:
+                if not isinstance(m, dict):
+                    continue
+                role = ('overseer' if m.get('isOverseer')
+                        else 'assistant' if m.get('isAssistant') else '')
+                groups[m.get('person_uid')] = {'label': label, 'role': role}
+
+        # uid -> [{'week': weekOf, 'role': dotted-path}] for current/future
+        # weeks. Slots are dicts with a 'value' holding a person_uid anywhere
+        # under the week entry — walk generically so new meeting parts are
+        # picked up without a schema map here (labels live in the renderer).
+        horizon = (date.today() - timedelta(days=7)).strftime('%Y/%m/%d')
+        upcoming = {}
+
+        def _walk(node, path, week):
+            if isinstance(node, dict):
+                v = node.get('value')
+                if isinstance(v, str) and len(v) == 36 and v.count('-') == 4:
+                    upcoming.setdefault(v, []).append(
+                        {'week': week, 'role': '.'.join(path)})
+                    return
+                for k, child in node.items():
+                    if k in ('weekOf', 'week_type', 'updatedAt', 'name'):
+                        continue
+                    _walk(child, path + [k], week)
+            elif isinstance(node, list):
+                for child in node:
+                    _walk(child, path, week)
+
+        for entry in _table('schedules'):
+            if not isinstance(entry, dict):
+                continue
+            week = entry.get('weekOf', '')
+            if not week or week < horizon:
+                continue
+            _walk({k: v for k, v in entry.items()
+                   if k not in ('weekOf', 'week_type')}, [], week)
+
         persons = []
-        for p in (bt.data or []):
+        for p in persons_data:
             if not isinstance(p, dict):
                 continue
             pd = p.get('person_data', {}) or {}
-            first = _val(p, 'person_firstname')
-            last = _val(p, 'person_lastname')
+            uid = p.get('person_uid')
+            first = _val(pd, 'person_firstname') or _val(p, 'person_firstname')
+            last = _val(pd, 'person_lastname') or _val(p, 'person_lastname')
             display = _val(pd, 'person_display_name') or f"{first} {last}".strip()
             archived = (pd.get('archived') or {})
             persons.append({
-                'person_uid': p.get('person_uid'),
+                'person_uid': uid,
                 'display_name': display,
                 'firstname': first,
                 'lastname': last,
                 'phone': _val(pd, 'phone'),
                 'email': _val(pd, 'email'),
+                'address': _val(pd, 'address') or '',
+                'male': bool(_val(pd, 'male')),
+                'birth_date': _val(pd, 'birth_date') or '',
+                'baptized_date': _val(pd, 'baptized_date') or '',
+                'privileges': _active(pd.get('privileges'), 'privilege'),
+                'enrollments': _active(pd.get('enrollments'), 'enrollment'),
+                'group': groups.get(uid),
+                'upcoming': sorted(upcoming.get(uid, []),
+                                   key=lambda a: a['week'])[:5],
                 'archived': bool(archived.get('value'))
                 if isinstance(archived, dict) else bool(archived),
             })
