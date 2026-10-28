@@ -68,7 +68,7 @@ def _fold(s):
 
 
 def _display_name(lastname, firstname):
-    """'Mondésir', 'Blondel' -> 'M. Blondel' (PWA's generateDisplayName)."""
+    """'Dupont', 'Jean' -> 'D. Jean' (PWA's generateDisplayName)."""
     if not lastname:
         return firstname
     if not firstname:
