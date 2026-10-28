@@ -42,20 +42,20 @@ class NameCanonicalizationTests(TestCase):
     """
 
     def test_bare_name_plain_string(self):
-        self.assertEqual(bare_name("Blondel"), "Blondel")
+        self.assertEqual(bare_name("Jean"), "Jean")
 
     def test_bare_name_single_dict(self):
-        self.assertEqual(bare_name({"value": "Blondel", "updatedAt": ""}), "Blondel")
+        self.assertEqual(bare_name({"value": "Jean", "updatedAt": ""}), "Jean")
 
     def test_bare_name_python_repr_string(self):
-        self.assertEqual(bare_name("{'value': 'Blondel', 'updatedAt': ''}"), "Blondel")
+        self.assertEqual(bare_name("{'value': 'Jean', 'updatedAt': ''}"), "Jean")
 
     def test_bare_name_triple_nested(self):
         poison = {
-            "value": "{'value': \"{'value': 'Blondel', 'updatedAt': ''}\", 'updatedAt': ''}",
+            "value": "{'value': \"{'value': 'Jean', 'updatedAt': ''}\", 'updatedAt': ''}",
             "updatedAt": "",
         }
-        self.assertEqual(bare_name(poison), "Blondel")
+        self.assertEqual(bare_name(poison), "Jean")
 
     def test_bare_name_empty_and_none(self):
         self.assertEqual(bare_name(None), "")
@@ -64,19 +64,19 @@ class NameCanonicalizationTests(TestCase):
 
     def test_name_field_shape(self):
         self.assertEqual(
-            name_field("Blondel"), {"value": "Blondel", "updatedAt": ""}
+            name_field("Jean"), {"value": "Jean", "updatedAt": ""}
         )
 
     def test_name_field_preserves_updated_at(self):
         self.assertEqual(
-            name_field({"value": "Blondel", "updatedAt": "2026-07-02"}),
-            {"value": "Blondel", "updatedAt": "2026-07-02"},
+            name_field({"value": "Jean", "updatedAt": "2026-07-02"}),
+            {"value": "Jean", "updatedAt": "2026-07-02"},
         )
 
     def test_name_field_is_idempotent(self):
-        once = name_field("Blondel")
+        once = name_field("Jean")
         twice = name_field(once)
         thrice = name_field(twice)
         self.assertEqual(once, twice)
         self.assertEqual(twice, thrice)
-        self.assertEqual(thrice["value"], "Blondel")
+        self.assertEqual(thrice["value"], "Jean")

@@ -7,7 +7,7 @@ parses it directly (stdlib zipfile + regex — no docx dependency):
 
   Dimanch, 12 Jiyè 2026 …
   Diskou piblik
-  10:20 AM | Fason pou nou pran bon desizyon (30 min.) | Mondésir, Blondel (CONG)
+  10:20 AM | Fason pou nou pran bon desizyon (30 min.) | Dupont, Jean (CONG)
 
 For each Sunday it extracts the talk TITLE and speaker, resolves the title to
 its S-34 talk NUMBER against the jwlinker corpus (titles are '<n>. <title>' in

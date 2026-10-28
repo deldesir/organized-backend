@@ -1,7 +1,7 @@
 """Name fields varchar → jsonb, with data repair.
 
 The CharField columns silently str()'d assigned dicts into Python-repr
-strings ("{'value': 'Blondel', ...}"), which every backup sync cycle then
+strings ("{'value': 'Jean', ...}"), which every backup sync cycle then
 re-wrapped one level deeper. This migration unwraps whatever historical
 shape each row holds down to the bare name, writes canonical
 {"value": ..., "updatedAt": ""} JSON text, and converts the columns.

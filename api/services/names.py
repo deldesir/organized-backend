@@ -4,11 +4,11 @@ The frontend models firstname/lastname as {value, updatedAt} objects. Two
 historical mistakes poisoned these fields:
 
   1. The columns were CharField, so an assigned dict was silently str()'d into
-     a Python-repr string ("{'value': 'Blondel', 'updatedAt': ''}").
+     a Python-repr string ("{'value': 'Jean', 'updatedAt': ''}").
   2. Endpoints disagreed on the shape — some stored bare strings, some stored
      the client dict; login unwrapped exactly one level; the admin serializer
      wrapped unconditionally. Every login+backup cycle therefore nested one
-     level deeper ("{'value': \"{'value': 'Blondel'...}\"}").
+     level deeper ("{'value': \"{'value': 'Jean'...}\"}").
 
 These helpers are the SINGLE source of truth. `bare_name` deep-unwraps any
 historical shape (dict, repr-string, JSON-string, arbitrarily nested) down to
