@@ -1,9 +1,15 @@
-Django>=5.1,<5.3
-djangorestframework>=3.15
-djangorestframework-simplejwt>=5.3
+Django>=5.2.19,<5.3
+djangorestframework>=3.18.3
+djangorestframework-simplejwt>=5.5.1
 django-cors-headers>=4.4
 gunicorn>=23.0
 celery>=5.4
 redis>=5.0
 psycopg2-binary>=2.9
 requests>=2.32
+# Floors on transitive dependencies with published advisories (pip-audit, 2026-11):
+# PyJWT and sqlparse come in through simplejwt and Django, urllib3 and certifi through requests.
+PyJWT>=2.15.1
+sqlparse>=0.6.0
+urllib3>=2.8.0
+certifi>=2026.10.23
